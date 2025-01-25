@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPLDV Flipbook</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+
+    <!-- Required Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
+        integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g=="
+        crossorigin="anonymous" referrerpolicy="no-referrer">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.js" 
+        integrity="sha512-9ocft8BVEGO4YnjEW4Tkq0+d3Usuax+GF922LJML/Q5ZLmtu9hgBbUZTxKXAkm+hzIHoC3I+vYha66opI9AuSg==" 
+        crossorigin="anonymous" referrerpolicy="no-referrer">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+
+    <!-- MathJax Configuration -->
+    <script type="text/x-mathjax-config">
+        MathJax.Hub.Config({
+            tex2jax: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true
+            },
+            "HTML-CSS": { availableFonts: ["TeX"], showMathMenu: false }
+        });
+    </script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            console.log("DOM Content Loaded");
+            
+            const flipbook = $("#flipbook");
+            let loadedPages = new Set();
+            let totalPages = 0;
+
+            async function loadPageContent(pageNumber) {
+                console.log(`Attempting to load content for page ${pageNumber}`);
+                try {
+                    const response = await fetch(`pages/page_${pageNumber}.html`);
+                    if (!response.ok) {
+                        console.log(`Page ${pageNumber} not found or error`);
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const content = await response.text();
+                    console.log(`Successfully loaded content for page ${pageNumber}`);
+                    return content;
+                } catch (error) {
+                    console.error(`Error loading page ${pageNumber}:`, error);
+                    return null;
+                }
+            }
+
+            async function countTotalPages() {
+                console.log("Starting to count total pages...");
+                let count = 0;
+                while (count < 100) { // Added safety limit
+                    try {
+                        console.log(`Checking for page_${count + 1}.html`);
+                        const response = await fetch(`pages/page_${count + 1}.html`);
+                        if (!response.ok) {
+                            console.log(`No more pages found after ${count}`);
+                            break;
+                        }
+                        count++;
+                    } catch {
+                        console.log(`Error checking page ${count + 1}, stopping count`);
+                        break;
+                    }
+                }
+                console.log(`Total pages counted: ${count}`);
+                return Math.max(1, count); // Ensure we return at least 1
+            }
+
+            async function loadAllPages() {
+                console.log("Loading all pages");
+                for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                    console.log(`Loading page ${pageNum}`);
+                    const content = await loadPageContent(pageNum);
+                    if (content) {
+                        console.log(`Adding page ${pageNum} to flipbook`);
+                        const pageElement = createPageElement({
+                            number: pageNum,
+                            content: content
+                        });
+                        flipbook.turn('addPage', pageElement, pageNum);
+                        loadedPages.add(pageNum);
+                    }
+                }
+                console.log("All pages loaded");
+            }
+
+            function createPageElement(pageData) {
+                console.log(`Creating element for page ${pageData.number}`);
+                return $('<div>', {
+                    class: 'flipbook-page',
+                    html: `<div class="content-wrapper">${pageData.content}</div>
+                        <div class="page-number">${pageData.number}</div>`
+                });
+            }
+
+            function resizeFlipbook() {
+                console.log("Resizing flipbook");
+                const containerWidth = $(".flipbook-container").width();
+                const width = Math.min(containerWidth * 0.95, 1600);
+                const height = width * 0.65;
+                flipbook.turn('size', width, height);
+            }
+
+            async function initializeFlipbook() {
+                console.log("Starting flipbook initialization");
+                
+                totalPages = await countTotalPages();
+                console.log(`Counted total pages: ${totalPages}`);
+                
+                document.getElementById('totalPages').textContent = totalPages;
+                
+                console.log("Initializing turn.js");
+                flipbook.turn({
+                    display: 'double',
+                    acceleration: true,
+                    gradients: !$.isTouch,
+                    elevation: 50,
+                    pages: totalPages,
+                    page: 1,
+                    when: {
+                        turning: function(event, page, view) {
+                            console.log(`Turning to page ${page}`);
+                            
+                            // Ensure we're showing correct page pairs (2-3, 4-5, etc.)
+                            if (page > 1 && page % 2 === 1) {
+                                page -= 1;
+                                event.preventDefault();
+                                flipbook.turn('page', page);
+                                return;
+                            }
+                            
+                            document.getElementById('currentPage').textContent = page;
+                            MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+                        }
+                    }
+                });
+
+                // Load all pages at once
+                console.log("Loading all pages");
+                await loadAllPages();
+                resizeFlipbook();
+                
+                // Force display of first page
+                setTimeout(() => {
+                    flipbook.turn('page', 1);
+                    document.getElementById('currentPage').textContent = '1';
+                }, 100);
+                
+                console.log("Initialization complete");
+            }
+
+            // Initialize everything
+            console.log("Starting main initialization");
+            initializeFlipbook().catch(error => {
+                console.error("Error during initialization:", error);
+            });
+
+            // Event listeners
+            $(window).resize(resizeFlipbook);
+
+            // Navigation button listeners
+            document.getElementById('prev').addEventListener('click', function() {
+                // Remove the onclick attribute from HTML and just use this handler
+                const currentPage = flipbook.turn('page');
+                if (currentPage > 1) {
+                    // Always move one page at a time
+                    flipbook.turn('previous');
+                }
+            });
+
+            document.getElementById('next').addEventListener('click', function() {
+                // Remove the onclick attribute from HTML and just use this handler
+                const currentPage = flipbook.turn('page');
+                if (currentPage < totalPages) {
+                    // Always move one page at a time
+                    flipbook.turn('next');
+                }
+            });
+
+            document.getElementById('jumpToPage').addEventListener('click', async function() {
+                const pageNumber = parseInt(document.getElementById('pageNumber').value);
+                console.log(`Jump to page requested: ${pageNumber}`);
+                
+                if (!pageNumber || pageNumber < 1 || pageNumber > totalPages) {
+                    console.log(`Invalid page number ${pageNumber}`);
+                    alert('Please enter a valid page number between 1 and ' + totalPages);
+                    return;
+                }
+
+                // Adjust to show even-numbered page on left for spreads
+                const adjustedPage = pageNumber === 1 ? 1 : (pageNumber % 2 === 0 ? pageNumber : pageNumber - 1);
+                flipbook.turn('page', adjustedPage);
+            });
+        });
+    </script>
+
+    <script>
+        function showImageCard(imageId) {
+            // Get the corresponding overlay
+            const overlay = document.getElementById(`overlay-${imageId}`);
+            const imgElement = document.querySelector(`[data-image-id="${imageId}"]`);
+            const cardImg = overlay.querySelector('.card-front img');
+            
+            // Set the image source
+            cardImg.src = imgElement.src;
+            cardImg.alt = imgElement.alt;
+            
+            // Show the overlay
+            overlay.style.display = 'flex';
+            
+            // Add click event to the card
+            const card = overlay.querySelector('.image-card');
+            card.onclick = function(e) {
+            e.stopPropagation();
+            this.classList.toggle('flipped');
+            };
+            
+            // Add click event to the overlay to close
+            overlay.onclick = function(e) {
+            if (e.target === overlay) {
+                overlay.style.display = 'none';
+                card.classList.remove('flipped');
+            }
+            };
+        }
+    </script>
+
+    <style>
+        .flipbook-container {
+            width: 100%;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        .flipbook-page {
+            background-color: white;
+            border: 1px solid #ddd;
+            position: relative;
+        }
+
+        .content-wrapper {
+            padding: 10px;
+            height: 100%;
+        }
+
+        .page-number {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .nav-button {
+            @apply px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 
+            transition-colors flex items-center;
+        }
+
+        .page-input {
+            @apply border rounded px-2 py-1;
+        }
+
+        .jump-button {
+            @apply px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 
+            transition-colors;
+        }
+    </style>
+
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .flipbook-container {
+            max-width: 1400px;
+            width: 95%;
+            margin: 2rem auto;
+            padding: 2rem;
+            background-color: #F4F6FF;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            border-radius: 15px;
+        }
+
+        #flipbook {
+            margin: 0 auto;
+        }
+
+        .flipbook-page {
+            width: 100%;  /* Set width to 100% of the flipbook */
+            height: 100%; /* Ensure height matches flipbook container */
+            background-color: white;
+            border: 1px solid #eaeaea;
+            position: relative;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1) inset;
+            /* Remove padding inside the flipbook page */
+            padding: 0;
+        }
+
+        .content-wrapper {
+            padding: 20px 20px 20px 20px;
+            margin: 0; /* Remove any external margin */
+            text-align: justify;
+        }
+
+        .page-number {
+            position: absolute;
+            bottom: 10px;
+            right: 20px;
+            font-size: 14px;
+            color: #888;
+            z-index: 10;
+        }
+
+        .nav-button {
+            background-color: #1D4ED8; /* Blue background */
+            color: white; /* White text */
+            padding: 0.75rem 1.5rem; /* Increase padding for a larger button */
+            border-radius: 0.5rem; /* Rounded corners */
+            font-weight: 600; /* Bold font */
+            font-size: 1rem; /* Font size */
+            display: inline-flex; /* Align icon and text horizontally */
+            align-items: center; /* Vertically center content */
+            gap: 0.5rem; /* Space between text and icon */
+            transition: background-color 0.3s ease; /* Smooth background color change */
+        }
+
+        .nav-button:hover {
+            background-color: #2563EB; /* Darker blue on hover */
+        }
+
+        .nav-button:active {
+            background-color: #1E40AF; /* Even darker blue when clicked */
+            transform: scale(0.98); /* Slightly scale down on click */
+        }
+
+        /* Button Container Styling */
+        .button-container {
+            display: flex;
+            justify-content: center; /* Center the buttons horizontally */
+            align-items: center; /* Align items vertically */
+            gap: 1rem; /* Space between buttons */
+            margin-top: 1.5rem; /* Add margin to the top of the button section */
+        }
+
+        /* Styling the Page Number Input */
+        .page-input {
+            border: 2px solid #E5E7EB; /* Light gray border */
+            border-radius: 0.5rem; /* Rounded corners */
+            padding: 0.5rem 0.75rem; /* Padding inside the box */
+            font-size: 1rem; /* Font size */
+            width: 60px; /* Set a fixed width */
+            text-align: center; /* Center the text */
+            transition: border-color 0.3s ease; /* Smooth border color change */
+        }
+
+        .page-input:focus {
+            border-color: #60A5FA; /* Light blue border when focused */
+            outline: none; /* Remove default outline */
+            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5); /* Blue shadow when focused */
+        }
+
+        /* Styling Jump to Page Button */
+        .jump-button {
+            background-color: #10B981; /* Green background */
+            color: white; /* White text */
+            padding: 0.5rem 1rem; /* Button padding */
+            border-radius: 0.5rem; /* Rounded corners */
+            font-weight: 600; /* Bold font */
+            font-size: 1rem; /* Font size */
+            transition: background-color 0.3s ease; /* Smooth background color change */
+            cursor: pointer;
+        }
+
+        .jump-button:hover {
+            background-color: #059669; /* Darker green on hover */
+        }
+
+        .jump-button:active {
+            background-color: #047857; /* Even darker green when clicked */
+            transform: scale(0.98); /* Slightly scale down on click */
+        }
+
+        /* Responsive adjustments for smaller screens */
+        @media (max-width: 640px) {
+            .nav-button {
+                padding: 0.5rem 1rem; /* Smaller padding on mobile */
+                font-size: 0.875rem; /* Slightly smaller font size */
+            }
+            .page-input {
+                width: 50px; /* Smaller input width on mobile */
+            }
+        }
+
+        @media (max-width: 768px) {
+            .content-wrapper > div {
+                flex-direction: column;
+            }
+            
+            .content-wrapper > div > div {
+                width: 100%;
+            }
+        }
+    </style>
+
+    <style>
+        .image-card-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.1);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        }
+        
+        .image-card {
+        position: relative;
+        width: 80%;
+        max-width: 600px;
+        height: 400px;
+        perspective: 1500px;
+        z-index: 10000;
+        }
+        
+        .card-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        transition: transform 0.6s;
+        }
+        
+        .card-front, .card-back {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        backface-visibility: hidden;
+        border-radius: 10px;
+        background: white;
+        padding: 20px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .card-front img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        }
+        
+        .card-back {
+        transform: rotateY(180deg);
+        display: flex;
+        align-items: center;
+        padding: 40px;
+        text-align: justify;
+        overflow-y: auto;
+        }
+        
+        .flipped .card-inner {
+        transform: rotateY(180deg);
+        }
+    
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <main class="flex-grow">
+        <div class="flipbook-container">
+            <div id="flipbook"></div>
+
+            <div class="button-container">
+                <button id="prev" class="nav-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Previous
+                </button>
+                
+                <div class="flex items-center space-x-2">
+                    <span class="text-gray-600">Page</span>
+                    <span id="currentPage" class="font-semibold">1</span>
+                    <span class="text-gray-600">of</span>
+                    <span id="totalPages" class="font-semibold">0</span>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <input type="number" id="pageNumber" class="page-input w-16" min="1">
+                    <button id="jumpToPage" class="jump-button">Go</button>
+                </div>
+
+                <button id="next" class="nav-button">
+                    Next
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline-block ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Card Overlay -->
+            <div id="card-overlay">
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image1">
+                    <div class="image-card" id="card-image1">
+                        <div class="card-inner">
+                            <div class="card-front">
+                                <img src="" alt="Papirus Rhind">
+                            </div>
+                            <div class="card-back">
+                                <p>
+                                    Papirus Rhind adalah salah satu dokumen matematika kuno yang paling terkenal dari peradaban Mesir Kuno. Dokumen ini disalin oleh seorang juru tulis bernama Ahmes sekitar tahun 1650 SM, 
+                                    tetapi diyakini merupakan salinan dari teks yang lebih tua dari sekitar 2000 SM. Papirus ini dinamai sesuai dengan nama penemunya, Alexander Henry Rhind, seorang arkeolog Skotlandia yang membelinya pada tahun 1858. 
+                                    Papirus Rhind memberikan wawasan tentang bagaimana matematika diterapkan secara praktis di Mesir kuno, dan ini adalah salah satu dokumen penting yang menunjukkan kemampuan matematika masyarakat kuno sebelum metode aljabar formal berkembang di dunia Islam dan Eropa.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+    
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image2">
+                    <div class="image-card" id="card-image2">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Euclid">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            Euclid adalah seorang matematikawan Yunani yang hidup sekitar tahun 300 SM, meskipun tanggal kelahiran dan kematiannya tidak diketahui secara pasti. Ia tinggal dan bekerja di Alexandria, Mesir, di bawah pemerintahan Ptolemaios I. 
+                            Euclid terkenal sebagai "Bapak Geometri" karena kontribusinya yang luar biasa dalam pengembangan geometri melalui karyanya yang paling terkenal, "Elements" (Elemen). Karya Euclid tidak hanya berpengaruh pada matematika, tetapi juga menjadi
+                            dasar dari pendidikan matematika selama berabad-abad. Prinsip-prinsipnya tentang pembuktian logis dan struktur deduktif menjadi standar dalam penelitian ilmiah dan matematika modern.
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image3">
+                    <div class="image-card" id="card-image3">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Diophantus">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            Diophantus adalah seorang matematikawan Yunani yang hidup sekitar abad ke-3 M, dengan perkiraan kelahiran dan kematian antara 200 M dan 284 M, meskipun tanggal pasti kelahirannya tidak diketahui. 
+                            Dikenal sebagai "Bapak Aljabar" karena kontribusinya dalam pengembangan aljabar dan pemecahan persamaan. Diophantus tinggal di Alexandria dan menulis karya terkenal berjudul "Arithmetica", yang terdiri dari beberapa buku yang membahas solusi persamaan dan bilangan bulat. 
+                            Diophantus membuka jalan bagi pengembangan aljabar di era selanjutnya dan menjadi referensi penting bagi matematikawan seperti Pierre de Fermat, yang terkenal dengan Teorema Terakhir Fermat yang terkait dengan persamaan Diophantine. Meskipun Diophantus dikenal karena solusi bilangan rasional, 
+                            gagasan tentang persamaan Diophantine tetap relevan hingga hari ini dalam teori bilangan dan kriptografi.
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image4">
+                    <div class="image-card" id="card-image4">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Al Khawarizmi">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            Al-Khwarizmi (nama lengkap: Muhammad ibn Musa al-Khwarizmi) adalah seorang matematikawan, astronom, dan ahli geografi dari Persia yang hidup sekitar tahun 780 M hingga 850 M. Ia dikenal sebagai salah satu tokoh paling berpengaruh dalam pengembangan aljabar dan matematika secara umum. 
+                            Al-Khwarizmi bekerja di "Baitul Hikmah" (House of Wisdom) di Baghdad, sebuah pusat penelitian dan pembelajaran yang terkenal pada masa Kekhalifahan Abbasiyah.
+                            Karya Al-Khwarizmi sangat berpengaruh dalam perkembangan matematika di dunia Islam dan Eropa. Bukunya diterjemahkan ke dalam bahasa Latin pada abad ke-12, sehingga memperkenalkan konsep aljabar ke Eropa dan menjadi landasan bagi matematika modern. 
+                            Kontribusinya dalam bidang aljabar dan aritmetika masih digunakan hingga saat ini, menjadikannya salah satu tokoh paling penting dalam sejarah matematika.
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image5">
+                    <div class="image-card" id="card-image5">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Omar Khayyam">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            Omar Khayyam (nama lengkap: Ghiyath al-Din Abu'l-Fath Umar ibn Ibrahim Al-Nisaburi al-Khayyami) adalah seorang polymath Persia yang hidup antara tahun 1048 M dan 1131 M. Ia terkenal sebagai seorang matematikawan, astronom, filsuf, dan penyair. 
+                            Meskipun Khayyam lebih dikenal di dunia Barat karena puisi-puisinya, terutama melalui karyanya "Rubaiyat", kontribusinya dalam matematika dan sains juga sangat berpengaruh. Dalam matematika, karyanya tentang persamaan kubik dan kalender berkontribusi besar pada perkembangan matematika Islam dan dunia
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image6">
+                    <div class="image-card" id="card-image6">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Rene Descartes">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            René Descartes (1596–1650) adalah seorang filsuf, matematikawan, dan ilmuwan Prancis yang sering disebut sebagai Bapak Filsafat Modern dan salah satu tokoh kunci dalam Rperubahan Ilmiah. 
+                            Ia terkenal karena pengembangan metode berpikir rasional dan kontribusinya terhadap perkembangan matematika. Dalam matematika, geometri analitiknya menjadi dasar untuk perkembangan lebih lanjut, seperti kalkulus dan fisika.
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image7">
+                    <div class="image-card" id="card-image7">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Blaise Pascal">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            Blaise Pascal (1623–1662) adalah seorang matematikawan, fisikawan, filsuf, dan teolog Prancis yang membuat kontribusi penting di berbagai bidang, termasuk matematika, fisika, dan agama. 
+                            Meskipun hidupnya singkat, Pascal dikenal sebagai salah satu pemikir besar dalam sejarah. Pascal meninggalkan warisan besar dalam ilmu pengetahuan dan filsafat. Penelitiannya dalam teori probabilitas menjadi dasar penting dalam banyak bidang modern. Prinsip Pascal tetap digunakan dalam fisika dan teknik.
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image8">
+                    <div class="image-card" id="card-image8">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Gauss">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            Carl Friedrich Gauss (1777–1855) adalah seorang matematikawan dan ilmuwan Jerman yang dianggap sebagai salah satu matematikawan terbesar sepanjang masa. Ia sering disebut sebagai "Pangeran Matematika" karena kontribusinya yang luar biasa dalam berbagai cabang matematika dan ilmu pengetahuan. 
+                            Gauss memiliki pengaruh yang sangat luas dalam matematika dan sains. Karyanya dalam teori bilangan, geometri, statistik, dan fisika masih menjadi dasar dalam berbagai disiplin ilmu. Banyak dari hasil karyanya diterapkan dalam teknologi modern, termasuk teori bilangan yang menjadi dasar kriptografi
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-75" id="overlay-image9">
+                    <div class="image-card" id="card-image8">
+                    <div class="card-inner">
+                        <div class="card-front">
+                        <img src="" alt="Gauss">
+                        </div>
+                        <div class="card-back">
+                        <p>
+                            William Rowan Hamilton (1805–1865) adalah seorang matematikawan, fisikawan, dan astronom Irlandia yang terkenal karena kontribusinya yang signifikan dalam bidang matematika, terutama dalam mekanika dan analisis. 
+                            Ia dianggap sebagai salah satu pemikir terpenting dalam sejarah matematika. Ia diakui sebagai salah satu tokoh terpenting dalam perkembangan matematika dan fisika di abad ke-19.
+                        </p>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
